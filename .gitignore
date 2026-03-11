@@ -1,7 +1,0 @@
-.env
-.dockerignore
-aws configs.docx
-README.md
-src/lambda_function_v2.py
-src/lambda_function.py
-src/testing.py
