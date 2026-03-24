@@ -22,6 +22,9 @@ RUN apt-get update && apt-get install -y \
     libx11-xcb1 \
     fontconfig \
     fonts-liberation \
+    fonts-dejavu-core \
+    fonts-dejavu \
+    fonts-roboto \
     libasound2t64 \
     libatk1.0-0 \
     libatk-bridge2.0-0 \
@@ -36,9 +39,17 @@ RUN apt-get update && apt-get install -y \
     libgl1 \
     libegl1 \
     wget \
+    cabextract \
     curl \
     ca-certificates \
+ && fc-cache -f -v \
  && rm -rf /var/lib/apt/lists/*
+
+# Copy Calibri fonts
+COPY fonts /usr/share/fonts/truetype/calibri
+
+# Refresh font cache
+RUN fc-cache -f -v
 
 WORKDIR /app
 

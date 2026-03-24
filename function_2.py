@@ -25,10 +25,13 @@ def get_browser():
             _playwright = None
 
     _playwright = sync_playwright().start()
-    _browser = _playwright.chromium.launch(args=[
-        '--no-sandbox', '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage', '--disable-gpu',
-    ])
+    _browser = _playwright.chromium.launch(
+        headless=True,
+        args=[
+            '--no-sandbox', '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage', '--disable-gpu',
+        ]
+    )
     return _browser
 
 @app.route('/health', methods=['GET'])
@@ -82,7 +85,6 @@ def returning():
             page.wait_for_function("() => document.readyState === 'complete'")
             logging.info("page is loaded full")
             page.wait_for_timeout(500)
-            page.emulate_media(media="screen")
             # page.emulate_media(media="screen")
 
             # Measure true content dimensions (no viewport influence)
@@ -125,7 +127,7 @@ def returning():
 
             viewport_width = max(content_width + MARGIN_PX * 2, 800)
             viewport_height = max(content_height + MARGIN_PX * 2 + BUFFER_PX, 600)
-            page.set_viewport_size({"width": viewport_width, "height": viewport_height})
+            # page.set_viewport_size({"width": viewport_width, "height": viewport_height})
             logging.info(f"viewport set to {viewport_width}x{viewport_height}")
 
             logging.info(f"content width is {content_width} and height is {content_height}")  
@@ -135,12 +137,12 @@ def returning():
                 # format='Letter',
                 # scale=1,
                 # prefer_css_page_size=True,
-                width=f"{content_width}px",
-                height=f"{content_height + BUFFER_PX}px",
+                # width=f"{content_width}px",
+                height=f"{content_height} px",
                 print_background=True,
-                scale=1,
-                prefer_css_page_size=False,
-                margin={'top': '0in', 'bottom': '0in', 'left': '0in', 'right': '0in'}
+                # scale=1,
+                # prefer_css_page_size=True,
+                margin={'top': '0.25 in', 'bottom': '0.25 in', 'left': '0.25 in', 'right': '0.25 in'}
                 )
             logging.info("pdf generated")
         finally:
