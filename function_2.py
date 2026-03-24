@@ -2,11 +2,14 @@ from flask import Flask, request, jsonify, send_file, current_app
 import os, io, json, uuid, boto3, base64
 from datetime import datetime
 from playwright.sync_api import sync_playwright
+import logging
 
 app = Flask(__name__)
 
-S3_BUCKET = os.environ.get('S3_BUCKET', 'your-bucket-name')
-s3_client = boto3.client('s3')
+# S3_BUCKET = os.environ.get('S3_BUCKET', 'your-bucket-name')
+# s3_client = boto3.client('s3')
+
+logging.basicConfig(level=logging.INFO)
 
 _playwright = None
 _browser = None
@@ -34,15 +37,22 @@ def health():
 
 @app.route('/returning', methods=['POST'])
 def returning():
+    filename="generated.pdf"
     try:
         content_type = (request.content_type or '').lower()
-        filename = request.args.get('filename', 'generated.pdf')
+        return_type = 'application/pdf'
+        # filename = request.args.get('filename', 'generated.pdf')
+        #print("filename is :",filename)
 
         if 'application/json' in content_type:
             data = request.get_json()
+            logging.info("data is received")
             html_content = data.get('html_content', '')
+            logging.info("html content is received")
             filename = data.get('filename', filename)
-            return_type = data.get('return_type',content_type)
+            logging.info(f"filename is :{filename}")
+            return_type = data.get('return_type', return_type)
+            logging.info(f"return type is {return_type}")
         else:
             html_content = request.get_data(as_text=True)
 
@@ -51,44 +61,88 @@ def returning():
         
         if not filename.lower().endswith('.pdf'):
             filename += '.pdf'
-            print("filename {filename}")
+            logging.info(f"filename {filename}")
         # Generate PDF
         browser = get_browser()
+        logging.info("browser started")
         page = browser.new_page()
+        logging.info("page loaded")
         try:
+            # page.set_viewport_size({"width": 1280, "height": 720})
             page.set_content(html_content, wait_until='networkidle', timeout=30000)
+            # Force a complete layout reflow before measuring
+            logging.info("preparing the page state")
+            page.evaluate("""() => {
+                // Force reflow
+                document.body.getBoundingClientRect();
+                // Force all images/media to report their size
+                return document.readyState;
+            }""")
+            # Wait for any delayed rendering (lazy loads, transitions, etc.)
+            page.wait_for_function("() => document.readyState === 'complete'")
+            logging.info("page is loaded full")
+            page.wait_for_timeout(500)
             page.emulate_media(media="screen")
-            # page.set_viewport_size({"width": 1280, "height": 900})
+            # page.emulate_media(media="screen")
 
-            # Inject print CSS to prevent page breaks
-            # page.add_style_tag(content="""
-            #                    * {
-            #                    -webkit-print-color-adjust: exact !important;
-            #                     print-color-adjust: exact !important;
-            #                     box-sizing: border-box;
-            #                    }
-            #                    body {
-            #                     margin: 0 !important;
-            #                     padding: 0 !important;
-            #                     width: 1280px !important;
-            #                    }
-            #                     /* Prevent unwanted page breaks */
-            #                     tr, td, th, li, p, div {
-            #                     page-break-inside: avoid;
-            #                    }
-            #                    """)
-            # Get actual content height
-            # height = page.evaluate("document.documentElement.scrollHeight")
-            # width  = page.evaluate("document.documentElement.scrollWidth")
+            # Measure true content dimensions (no viewport influence)
+            # dimensions = page.evaluate("""() => {
+            #                             // Shrink body to content, not viewport
+            #                             document.body.style.display = 'inline-block';
+            #                             return {
+            #                                 width:  Math.ceil(document.body.scrollWidth),
+            #                                 height: Math.ceil(document.body.scrollHeight)
+            #                            };
+            #                            }"""
+            #                            )
+            logging.info("evaluating the page size")
+            dimensions = page.evaluate("""() => {
+                                       document.body.style.display = 'inline-block';
+                                        
+                                        // Get the bottom-most point of ALL elements on the page
+                                        const all = document.querySelectorAll('*');
+                                        let maxBottom = 0;
+                                        let maxRight = 0;
+                                        
+                                        all.forEach(el => {
+                                            const rect = el.getBoundingClientRect();
+                                            if (rect.bottom > maxBottom) maxBottom = rect.bottom;
+                                            if (rect.right  > maxRight)  maxRight  = rect.right;
+                                        });
+
+                                        return {
+                                            width:  Math.ceil(Math.max(document.body.scrollWidth,  maxRight)),
+                                            height: Math.ceil(Math.max(document.body.scrollHeight, maxBottom))
+                                        };
+                                    }""")
+
+            MARGIN_IN = 0.5
+            MARGIN_PX = int(MARGIN_IN * 96)
+            BUFFER_PX = 50
+
+            content_width  = max(dimensions['width'],  1)
+            content_height = max(dimensions['height'], 1)
+
+            viewport_width = max(content_width + MARGIN_PX * 2, 800)
+            viewport_height = max(content_height + MARGIN_PX * 2 + BUFFER_PX, 600)
+            page.set_viewport_size({"width": viewport_width, "height": viewport_height})
+            logging.info(f"viewport set to {viewport_width}x{viewport_height}")
+
+            logging.info(f"content width is {content_width} and height is {content_height}")  
             pdf_bytes = page.pdf(
-                prefer_css_page_size=True,
-                page_ranges='1',
-                format='Letter',
+                # prefer_css_page_size=True,
+                # page_ranges='1',
+                # format='Letter',
+                # scale=1,
+                # prefer_css_page_size=True,
+                width=f"{content_width}px",
+                height=f"{content_height + BUFFER_PX}px",
+                print_background=True,
                 scale=1,
-                # width=f"{width}px",
-                # height=f"{height}px",
-                print_background=True
+                prefer_css_page_size=False,
+                margin={'top': '0in', 'bottom': '0in', 'left': '0in', 'right': '0in'}
                 )
+            logging.info("pdf generated")
         finally:
             page.close()
             # browser.close()
